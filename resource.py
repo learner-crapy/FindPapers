@@ -11,7 +11,7 @@ class IfHighlyAbout(BaseModel):
     result: bool=Field(description="if the paper is highly about the user's requirements")
 
 USER_PROMPT = '''
-Is this paper highly about agent debate systems, and do not call external knowledge, but only improve performance through debate algorithms between agents?
+Is this paper highly about agent debate systems, and call external knowledge,like external database, training dataset, web data etc to help the agent improve the performance.
 If yes, return True, else return False.
 '''
 
