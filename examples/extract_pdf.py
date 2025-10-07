@@ -1,34 +1,56 @@
 import asyncio
+import os
+import time
+
+import psycopg
 from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
 from crawl4ai.processors.pdf import PDFCrawlerStrategy, PDFContentScrapingStrategy
 
-async def main():
-    # Initialize the PDF crawler strategy
-    pdf_crawler_strategy = PDFCrawlerStrategy()
+from examples.download_pdf import sanitize_filename
+from tools.page_extract import get_pdf_page_content
 
-    # PDFCrawlerStrategy is typically used in conjunction with PDFContentScrapingStrategy
-    # The scraping strategy handles the actual PDF content extraction
-    pdf_scraping_strategy = PDFContentScrapingStrategy()
-    run_config = CrawlerRunConfig(scraping_strategy=pdf_scraping_strategy)
+conn = psycopg.connect(
+    dbname="dazelu",
+    user="",
+    password="",
+    host="localhost",
+    port="5432"
+)
+cur = conn.cursor()
 
-    async with AsyncWebCrawler(crawler_strategy=pdf_crawler_strategy) as crawler:
-        # Example with a remote PDF URL
-        pdf_url = "https://aclanthology.org/2024.emnlp-industry.91.pdf" # A public PDF from arXiv
+# ---- 查询匹配论文 ----
+query = """
+SELECT link, title
+FROM papers
+WHERE TRUE = ANY (if_match)
+  AND '(\"agent debate\" OR \"multi-agent debate\") AND (reasoning OR performance OR system) NOT (\"external knowledge\" OR \"retrieval\" OR \"knowledge base\" OR \"database\")' = ANY(query);
+        """
+cur.execute(query)
+results = cur.fetchall()
 
-        print(f"Attempting to process PDF: {pdf_url}")
-        result = await crawler.arun(url=pdf_url, config=run_config)
+print(f"🔍 Found {len(results)} matched papers.\n")
 
-        if result.success:
-            print(f"Successfully processed PDF: {result.url}")
-            print(f"Metadata Title: {result.metadata.get('title', 'N/A')}")
-            # Further processing of result.markdown, result.media, etc.
-            # would be done here, based on what PDFContentScrapingStrategy extracts.
-            if result.markdown and hasattr(result.markdown, 'raw_markdown'):
-                print(f"Extracted text (first 200 chars): {result.markdown.raw_markdown}...")
-            else:
-                print("No markdown (text) content extracted.")
-        else:
-            print(f"Failed to process PDF: {result.error_message}")
+# ---- 下载目录 ----
+save_dir = "../milvus_docs/pure_algorithm/"
+os.makedirs(save_dir, exist_ok=True)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# ---- 遍历下载 ----
+for link, title in results:
+    time.sleep(2)
+    pdf_link = link.replace("/abs/", "/pdf/")
+    safe_title = sanitize_filename(title) + ".md"
+    file_path = os.path.join(save_dir, safe_title)
+    result = asyncio.run(get_pdf_page_content(pdf_link))
+    if result:
+        with open(file_path, "w") as f:
+            f.write(result)
+
+
+# ---- 关闭连接 ----
+cur.close()
+conn.close()
+
+
+
+
+
